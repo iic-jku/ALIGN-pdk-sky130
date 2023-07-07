@@ -2,6 +2,8 @@ from align.primitive.default.canvas import DefaultCanvas
 from align.cell_fabric.generators import *
 from align.cell_fabric.grid import *
 
+import math
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,31 @@ class ResGenerator(DefaultCanvas):
                                         WidthX=self.v2.WidthX, WidthY=self.v2.WidthY,
                                         h_ext=self.v2.h_ext, v_ext=self.v2.v_ext))
 
+        #definitions for sky130_fd_pr__res_high_po_0p35
+        mySPG = EnclosureGrid(pitch=self.m2.spg.period, stoppoint=0, offset=0) #grid with m2.spg period
+        mySPG_v = EnclosureGrid(pitch=self.m2.clg.period, stoppoint=0, offset=0) #grid with m2.clg period
+
+        mySPG_M1_v = EnclosureGrid(pitch=350, stoppoint=0, offset=-175) #grid with m2.clg period
+        self.myPoly0p35 = self.addGen(Wire('poly0p35', 'Pc', 'h', clg=UncoloredCenterLineGrid( pitch=self.m2.clg.period, width=350, offset=0), spg=mySPG))
+        self.myM2 = self.addGen(Wire('myM2', 'M2', 'h', clg=UncoloredCenterLineGrid( pitch=self.m2.clg.period, width=self.pdk["M2"]["Width"], offset=0), spg=mySPG))
+        self.myM1 = self.addGen(Wire('myM1', 'M1', 'h', clg=UncoloredCenterLineGrid( pitch=self.m2.clg.period, width=350, offset=0), spg=mySPG))
+        self.myM1_v = self.addGen(Wire('myM1_v', 'M1', 'v', clg=UncoloredCenterLineGrid( pitch=self.m2.spg.period, width=350, offset=175), spg=mySPG_M1_v))
+        
+        self.myV0 = self.addGen( Via( 'myV0', 'V0',
+                                        h_clg=self.myPoly0p35.clg, v_clg=self.myM1_v.clg,
+                                        WidthX=self.v1.WidthX, WidthY=self.v1.WidthY,
+                                        h_ext=self.v1.h_ext, v_ext=self.v1.v_ext))
+        
+        self.myV1 = self.addGen( Via( 'myV1', 'V1',
+                                        h_clg=self.myM2.clg, v_clg=self.myM1_v.clg,
+                                        WidthX=self.v1.WidthX, WidthY=self.v1.WidthY,
+                                        h_ext=self.v1.h_ext, v_ext=self.v1.v_ext))
+
+        clg_mim = UncoloredCenterLineGrid( pitch=2, width=2) #grid with 2nm spacing
+        self.p_res_boundary = self.addGen(Region("PRES_boundary", "Npc", h_grid=clg_mim, v_grid=clg_mim))
+        self.p_impl_boundary = self.addGen(Region("PIMPL_boundary", "Pselect", h_grid=clg_mim, v_grid=clg_mim))
+        self.urpm_boundary = self.addGen(Region("Urpm_boundary", "Urpm", h_grid=clg_mim, v_grid=clg_mim))
+        self.p_res_region = self.addGen(Region("PRES", "PRes", h_grid=clg_mim, v_grid=clg_mim))
         self.Rboundary = self.addGen( Region( 'Rboundary', 'Rboundary', h_grid=self.m2.clg, v_grid=self.m1.clg))
 
     def addResArray(self, x_cells, y_cells, height, unit_res):
@@ -47,69 +74,50 @@ class ResGenerator(DefaultCanvas):
             for y in range(y_cells):
                 self._addRes(x, y, height, unit_res, (x == x_cells-1) and (y == y_cells-1))
 
-    def _addRes( self, x, y, height, unit_res, draw_boundary=True):
+    
+    def _addRes(self, x, y, height, unit_res, draw_boundary=True):
+        
+        l = round(unit_res / 2000 * 350)
 
-        y_length = self.finsPerUnitCell * self.pdk['Fin']['Pitch'] * height
-        assert y_length != 0, (self.finsPerUnitCell, self.pdk['Fin']['Pitch'], height)
-        # SMB ??? Hard coded value
-        res_per_length = 67
-        x_number = max( 1, int(round(((1000*unit_res)/(res_per_length*y_length)))))
+        m2_period_x = self.myM2.spg.period
 
-        # ga = 2 if x_number == 1 else 1 ## when number of wires is 2 then large spacing req. so contact can be placed without a DRC error 
-        # x_length = (x_number - 1) *ga*self.pdk['Cap']['m1Pitch']
+        logger.debug(f"x={x}, y={y}, h={height}, unit_res={unit_res}, l={l}")
 
-        y_number = int(2 *round(((y_length+self.pdk['Cap']['m2Pitch']-self.pdk['Cap']['m2Width'])/(2.0*self.pdk['Cap']['m2Pitch']))))
+        n_vias_per_pin = 6
+        poly_length = math.ceil((2*n_vias_per_pin * m2_period_x + l)/m2_period_x)*m2_period_x
 
-        last_y1_track = ((y_number-1)*self.pdk['Cap']['m2Pitch']+self.pdk['M2']['Pitch']-1)//self.pdk['M2']['Pitch']
-        last_x_track = x_number - 1
+        n_poly = poly_length//m2_period_x
 
-        m2factor = 2 ### number of m2-tracks (m2factor-1)in between two unitcells in y-direction
-        m1factor = 3
+        self.addWire(self.myPoly0p35, "POLY", 0, (0,-1), (n_poly,1))
+        #self.addWire(self.myM1, "PLUS", 0, (0,-1), (6,1))
+        self.addWire(self.myM2, "PLUS", 0, (0,-1), (n_vias_per_pin,1),netType="pin")
+        #self.addWire(self.myM1, "MINUS", 0, (n_poly-6,-1), (n_poly,1))
+        self.addWire(self.myM2, "MINUS", 0, (n_poly-n_vias_per_pin,-1), (n_poly,1),netType="pin")
+        
+        
+        
+        for n in range(n_vias_per_pin):
+            self.addWire(self.myM1_v, "PLUS", n, (0,-1), (1,1))
+            self.addVia(self.myV0, "PLUS", n, 0)
+            self.addVia(self.myV1, "PLUS", n, 0)
+        
+        for n in range(n_vias_per_pin):
+            self.addWire(self.myM1_v, "MINUS", n_poly-n-1, (0,-1), (1,1))
+            self.addVia(self.myV0, "MINUS", n_poly-n-1, 0)
+            self.addVia(self.myV1, "MINUS", n_poly-n-1, 0)
 
-        if (y_number-1) % 2 != last_y1_track % 2:
-            last_y1_track += 1 # so the last color is compatible with the external view of the cell
+        clg_mim = UncoloredCenterLineGrid( pitch=2, width=2) #grid with 2nm spacing
+        li_region = Region("Licon", "M1", h_grid=clg_mim, v_grid=clg_mim)
+        
+        
+        self.addRegion(li_region, "PLUS", 0, -175//2, (n_vias_per_pin*m2_period_x)//2, 175//2)
+        self.addRegion(self.p_res_region, "PRES", (n_vias_per_pin*m2_period_x-60)//2, -175//2, (n_vias_per_pin*m2_period_x+l+60)//2, 175//2)
+        self.addRegion(li_region, "MINUS", (n_vias_per_pin*m2_period_x+l)//2, -175//2, (n_poly*m2_period_x)//2, 175//2)
+        
+        
+        
+        self.addRegion(self.p_res_boundary, None, 0, -175//2, (n_poly*m2_period_x)//2, 175//2)
+        self.addRegion(self.p_impl_boundary, None, 0, -175//2, (n_poly*m2_period_x)//2, 175//2)
+        self.addRegion(self.urpm_boundary, None, 0, -175//2, (n_poly*m2_period_x)//2, 175//2)
 
-        if last_y1_track % 2 == 1:
-            m2factor += 1 # so colors match in arrayed blocks
-
-        grid_cell_x_pitch = m1factor + last_x_track
-        grid_cell_y_pitch = m2factor + last_y1_track
-
-        grid_y0 = y*grid_cell_y_pitch
-        grid_y1 = grid_y0 + last_y1_track
-
-        for i in range(x_number):
-            (k, p) = (2*i, 1) if x_number==2 else (i, 0)
-            grid_x = k + x*grid_cell_x_pitch
-
-            self.addWire( self.m1res, None, grid_x, (grid_y0, -1), (grid_y1, 1))
-            if i < x_number-1:
-                grid_yh = ((i+1)%2)*last_y1_track
-                self.addWire( self.m1res2, None, grid_yh, (i, -1), (i+p+1, 1))
-
-#
-# Build the narrow m2 pitch grid starting at grid_cell_y_pitch*y in standard m2 pitch grids (m2.clg)
-#
-        m2n = Wire( self.m2res2.nm, self.m2res2.layer, self.m2res2.direction,
-                    clg=self.m2res2.clg.copyShift( self.m2res.clg.value( grid_cell_y_pitch*y)[0]),
-                    spg=self.m2res2.spg)
-
-        grid_x0 = x*grid_cell_x_pitch
-        grid_x1 = grid_x0 + last_x_track
-        grid_y = (x_number%2)*last_y1_track
-
-        pin = 'PLUS'
-        self.addWire( m2n, 'PLUS', 0, (-4, -1), (0, 1), netType = 'pin')
-        self.addVia( self.v1res, None, 0, 0)
-        pin = 'MINUS'
-        self.addWire( self.m2res, 'MINUS', grid_y, (grid_x1+p, -1), (grid_x1+p+4, 1), netType = 'pin')
-        self.addVia( self.v1res, None, grid_x1+p, grid_y)
-
-        if draw_boundary:
-            self.addRegion( self.boundary, 'boundary', -4, -1,
-                            last_x_track  + x * grid_cell_x_pitch + 4 + p,
-                            last_y1_track + y * grid_cell_y_pitch + 1)
-
-            self.addRegion( self.Rboundary, 'Rboundary', -1, -1,
-                            last_x_track  + x * grid_cell_x_pitch + 4 + p,
-                            last_y1_track + y * grid_cell_y_pitch + 1)
+        self.addRegion(self.boundary, "boundary", -2,-2, n_poly+2,2)
