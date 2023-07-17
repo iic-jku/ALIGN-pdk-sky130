@@ -318,6 +318,14 @@
 },
 
 {
+"Layer": "PRes",
+"GdsLayerNo": 66,
+"GdsDatatype": {"Draw":13},
+"Width": 270,
+"Ext": 0
+},
+
+{
 "Layer": "Rvt",
 "GdsLayerNo": 11,
 "GdsDatatype": {"Draw":0},
@@ -352,6 +360,12 @@
 "WidthX": 200,
 "WidthY": 200,
 "Enclosure": 200
+},
+
+{
+    "Layer": "Urpm",
+    "GdsLayerNo": 79,
+    "GdsDatatype": {"Draw":20}
 },
 
 {
@@ -398,8 +412,15 @@
 
 {
 "Layer": "Cap",
-"m4Width": 450,
-"m5Width": 450
+"m1Pitch": 1200,
+"m2Pitch": 1200,
+"m3Pitch": 400,
+"m4Pitch": 400,
+"m1Width": 1100,
+"m2Width": 1100,
+"m3Width": 1100,
+"m4Width": 1450,
+"m5Width": 1450
 }
 
 ]
